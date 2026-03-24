@@ -1,15 +1,15 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "privaro"
-version = "0.1.0"
+version = "0.2.0"
 description = "Privacy Infrastructure for Enterprise AI — Official Python SDK"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "iCommunity Labs", email = "hello@icommunity.io" }]
-keywords = ["privacy", "pii", "gdpr", "ai", "llm", "compliance", "blockchain"]
+keywords = ["privacy", "pii", "gdpr", "ai", "llm", "compliance", "blockchain", "agent"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -32,8 +32,8 @@ dev = ["pytest>=7.0", "pytest-asyncio", "aiohttp>=3.9", "black", "ruff"]
 [project.urls]
 Homepage = "https://privaro.io"
 Documentation = "https://privaro.io/docs"
-Repository = "https://github.com/icommunity-labs/privaro-python-sdk"
-"Bug Tracker" = "https://github.com/icommunity-labs/privaro-python-sdk/issues"
+Repository = "https://github.com/Maperez1972/privaro-sdk-python"
+"Bug Tracker" = "https://github.com/Maperez1972/privaro-sdk-python/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
