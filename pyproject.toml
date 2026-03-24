@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "privaro"
+version = "0.1.0"
+description = "Privacy Infrastructure for Enterprise AI — Official Python SDK"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "iCommunity Labs", email = "hello@icommunity.io" }]
+keywords = ["privacy", "pii", "gdpr", "ai", "llm", "compliance", "blockchain"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.9"
+dependencies = []  # Zero required dependencies — uses stdlib only
+
+[project.optional-dependencies]
+async = ["aiohttp>=3.9"]
+dev = ["pytest>=7.0", "pytest-asyncio", "aiohttp>=3.9", "black", "ruff"]
+
+[project.urls]
+Homepage = "https://privaro.io"
+Documentation = "https://privaro.io/docs"
+Repository = "https://github.com/icommunity-labs/privaro-python-sdk"
+"Bug Tracker" = "https://github.com/icommunity-labs/privaro-python-sdk/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["privaro*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
