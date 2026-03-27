@@ -1,6 +1,6 @@
 # Privaro Python SDK
 
-**Privacy Infrastructure for Enterprise AI** — Official Python SDK by [iCommunity Labs](https://privaro.io)
+**Privacy Infrastructure for Enterprise AI** — Official Python SDK by [iCommunity Labs](https://privaro.ai)
 
 Protect PII in AI prompts with one line of code. Every interaction is tokenized, audited, and blockchain-certified.
 
