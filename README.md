@@ -197,4 +197,5 @@ Access the TX hash from your Privaro dashboard → Audit Logs → ⛓️ badge.
 
 ## License
 
-MIT — © 2026 iCommunity Labs · [privaro.io](https://privaro.io)
+MIT — © 2026 by iCommunity Labs · [privaro.ai](https://privaro.ai)
+[icommunity.io](https://icommunity.io)
