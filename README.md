@@ -6,7 +6,60 @@ Protect PII in AI prompts with one line of code. Every interaction is tokenized,
 
 ---
 
-## Installation
+## 🚀 Why Privaro
+
+Control data before AI processing.
+
+---
+
+
+## 🔥 Example (OpenAI)
+
+```python
+from openai import OpenAI
+from privaro import Privaro
+
+client = OpenAI()
+privaro = Privaro(api_key="YOUR_API_KEY")
+
+input_text = "My name is John Doe and my IBAN is ES76..."
+
+protected = privaro.protect(prompt=input_text)
+
+response = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[{"role":"user","content":protected["protected_prompt"]}]
+)
+
+print(response)
+```
+
+---
+
+## ❌ Without Privaro
+
+Raw data → model
+
+## ✅ With Privaro
+
+Tokenized → safe → auditable
+
+---
+
+## 🤖 Agents
+
+Supports multi-step agent protection.
+
+---
+
+## 🔗 Related
+
+- Proxy
+- JS SDK
+
+---
+
+## ⚡ Install
 
 ```bash
 pip install privaro
