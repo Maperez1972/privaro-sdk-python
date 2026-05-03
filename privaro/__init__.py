@@ -8,12 +8,18 @@ Usage (protect):
     result = privaro.protect("Patient: María García, DNI 34521789X")
     print(result.protected)      # "Patient: [NM-0001], DNI [ID-0001]"
 
-Usage (agent):
+Usage (agent sync):
     from privaro.agent import AgentRun
     with AgentRun(api_key="prvr_xxx", pipeline_id="uuid") as run:
-        step = run.protect([{"role": "user", "content": "Call customer John Smith"}])
-        # send step.protected_messages to LLM...
-        final = run.reveal(llm_response)
+        step = run.protect("Analyse contract for Juan García")
+        response = your_llm.complete(step.protected_messages)
+        final = run.reveal(response)
+
+Usage (agent async / CrewAI):
+    from privaro.async_client import AsyncAgentRun
+    async with AsyncAgentRun(api_key="prvr_xxx", pipeline_id="uuid") as run:
+        step = await run.protect("...")
+        final = await run.reveal(await your_llm.acomplete(step.first_content))
 """
 
 from .client import PrivaroClient
@@ -29,12 +35,13 @@ __all__ = [
     "PrivaroError",
     "AuthError",
     "PipelineNotFoundError",
+    "AgentRun",
+    "PrivaroCallbackHandler",
     "init",
     "protect",
     "detect",
 ]
 
-# ── Module-level default client ───────────────────────────────────────────────
 _default_client: "PrivaroClient | None" = None
 
 
@@ -52,15 +59,6 @@ def init(
         pipeline_id: UUID of your active pipeline
         base_url:    Proxy URL (default: production)
         timeout:     Request timeout in seconds
-
-    Returns:
-        PrivaroClient instance (also set as module default)
-
-    Example:
-        privaro.init(
-            api_key="prvr_abc123",
-            pipeline_id="c93aed87-b440-4de0-bb21-54a938e475f2"
-        )
     """
     global _default_client
     _default_client = PrivaroClient(
@@ -70,6 +68,17 @@ def init(
         timeout=timeout,
     )
     return _default_client
+
+
+def _get_config() -> dict:
+    """Internal: return current default client config."""
+    if _default_client is None:
+        return {}
+    return {
+        "api_key": _default_client.api_key,
+        "pipeline_id": _default_client.pipeline_id,
+        "base_url": _default_client.base_url,
+    }
 
 
 def _require_client() -> "PrivaroClient":
@@ -87,40 +96,13 @@ def protect(
     agent_mode: bool = False,
     include_detections: bool = True,
 ) -> "ProtectResult":
-    """
-    Detect and tokenize PII in a prompt.
-
-    Args:
-        prompt:             Text to protect
-        mode:               tokenise | anonymise | block
-        reversible:         Store reversible tokens in vault
-        agent_mode:         Apply stricter policies for agent pipelines
-        include_detections: Include detection details in response
-
-    Returns:
-        ProtectResult with .protected, .risk_score, .detections, etc.
-
-    Example:
-        result = privaro.protect("Patient: María García, DNI 34521789X")
-        llm_response = your_llm.complete(result.protected)
-    """
+    """Detect and tokenize PII in a prompt."""
     return _require_client().protect(
-        prompt=prompt,
-        mode=mode,
-        reversible=reversible,
-        agent_mode=agent_mode,
-        include_detections=include_detections,
+        prompt=prompt, mode=mode, reversible=reversible,
+        agent_mode=agent_mode, include_detections=include_detections,
     )
 
 
 def detect(prompt: str) -> "ProtectResult":
-    """
-    Detect PII without masking (analysis mode).
-    Does not store audit logs or tokens.
-
-    Example:
-        result = privaro.detect("Call me at 612 345 678")
-        for d in result.detections:
-            print(d.type, d.confidence)
-    """
+    """Detect PII without masking (analysis mode)."""
     return _require_client().detect(prompt=prompt)
