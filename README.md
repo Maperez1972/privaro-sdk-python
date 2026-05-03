@@ -1,254 +1,171 @@
 # Privaro Python SDK
 
-**Privacy Infrastructure for Enterprise AI** — Official Python SDK by [iCommunity Labs](https://privaro.ai)
+**Privacy Infrastructure for Enterprise AI — iCommunity Labs**
 
-Protect PII in AI prompts with one line of code. Every interaction is tokenized, audited, and blockchain-certified.
-
----
-
-## 🚀 Why Privaro
-
-Control data before AI processing.
-
----
-
-
-## 🔥 Example (OpenAI)
-
-```python
-from openai import OpenAI
-from privaro import Privaro
-
-client = OpenAI()
-privaro = Privaro(api_key="YOUR_API_KEY")
-
-input_text = "My name is John Doe and my IBAN is ES76..."
-
-protected = privaro.protect(prompt=input_text)
-
-response = client.chat.completions.create(
-    model="gpt-4o-mini",
-    messages=[{"role":"user","content":protected["protected_prompt"]}]
-)
-
-print(response)
-```
-
----
-
-## ❌ Without Privaro
-
-Raw data → model
-
-## ✅ With Privaro
-
-Tokenized → safe → auditable
-
----
-
-## 🤖 Agents
-
-Supports multi-step agent protection.
-
----
-
-## 🔗 Related
-
-- Proxy
-- JS SDK
-
----
-
-## ⚡ Install
+The Privaro SDK intercepts prompts and agent steps, tokenises PII before any LLM call, and generates a blockchain-certified audit trail per interaction.
 
 ```bash
 pip install privaro
-```
-
-No required dependencies — uses Python stdlib only.
-
-```bash
-# Optional: async support
-pip install privaro[async]
+pip install privaro[async]   # for AsyncAgentRun + CrewAI support
 ```
 
 ---
 
 ## Quick Start
 
+### Protect a prompt
+
 ```python
 import privaro
 
-# Initialize once (e.g., at app startup)
 privaro.init(
-    api_key="prvr_your_api_key",
-    pipeline_id="your-pipeline-uuid",
+    api_key="prvr_your_key",
+    pipeline_id="your-pipeline-uuid"
 )
 
-# Protect a prompt before sending to any LLM
-result = privaro.protect("Patient: María García, DNI 34521789X, IBAN ES91 2100...")
+result = privaro.protect("Patient: María García, DNI 34521789X, Tel: 612 345 678")
+print(result.protected)
+# "Patient: [NM-0001], DNI [ID-0001], Tel: [PH-0001]"
 
-print(result.protected)      # "Patient: [NM-0001], DNI [ID-0001], IBAN [BK-0001]..."
-print(result.risk_score)     # 0.847
-print(result.risk_level)     # "high"
-print(result.gdpr_compliant) # True
-
-# Send protected prompt to your LLM — no PII ever reaches the model
-response = openai.chat.completions.create(
-    model="gpt-4o",
-    messages=[{"role": "user", "content": result.protected}]
-)
+response = your_llm.complete(result.protected)   # LLM never sees real PII
 ```
 
 ---
 
-## Usage Patterns
+## Agent Support
 
-### Protect + LLM (full pipeline)
+### Sync — AgentRun (LangChain, direct)
 
 ```python
+from privaro.agent import AgentRun
+
+with AgentRun(api_key="prvr_...", pipeline_id="...") as run:
+    # Step 1: protect before LLM
+    step = run.protect([
+        {"role": "user", "content": "Review contract for Juan García, IBAN ES91 2100 0418 4502 0005 1332"}
+    ])
+    
+    # Step 2: send protected messages to LLM
+    response = your_llm.complete(step.protected_messages)
+    
+    # Step 3: detokenise final output
+    final = run.reveal(response)
+    print(f"Risk score: {step.risk_score}")    # 0.0–1.0
+    print(f"PII detected: {step.total_pii_detected}")
+```
+
+### Async — AsyncAgentRun (CrewAI, asyncio, n8n)
+
+```python
+import asyncio
+from privaro.async_client import AsyncAgentRun
+
+async def analyse_document(text: str) -> str:
+    async with AsyncAgentRun(
+        api_key="prvr_...",
+        pipeline_id="...",
+        agent_framework="crewai",
+    ) as run:
+        step = await run.protect(text)
+        response = await your_llm.acomplete(step.first_content)
+        return await run.reveal(response)
+
+result = asyncio.run(analyse_document("Client: Ana López, DNI 87654321X"))
+```
+
+### LangChain Callback Handler
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain.agents import AgentExecutor
+from privaro.agent import PrivaroCallbackHandler
 import privaro
-import openai
 
-privaro.init(api_key="prvr_xxx", pipeline_id="uuid")
+privaro.init(api_key="prvr_...", pipeline_id="...")
 
-def ask_ai(user_input: str) -> str:
-    # 1. Protect PII
-    protected = privaro.protect(user_input)
+handler = PrivaroCallbackHandler(agent_name="contract-agent")
+llm = ChatOpenAI(model="gpt-4", callbacks=[handler])
+agent_executor = AgentExecutor(agent=agent, tools=tools, callbacks=[handler])
 
-    if not protected.is_safe:
-        raise ValueError(f"PII leak detected: {protected.leaked} entities exposed")
-
-    # 2. Call LLM with protected prompt
-    response = openai.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": protected.protected}]
-    )
-
-    return response.choices[0].message.content
+# All prompts and tool outputs are automatically protected
+result = agent_executor.invoke({"input": "Analyse this contract for María García"})
 ```
 
-### Detect only (analysis mode)
+### CrewAI Tool
 
 ```python
-result = privaro.detect("Call me at 612 345 678, email: user@company.es")
+from privaro.async_client import CrewAIPrivaroTool
+from crewai import Tool
 
-for detection in result.detections:
-    print(f"{detection.type}: {detection.severity} ({detection.detector})")
-# phone: high (regex)
-# email: high (regex)
+class ContractAnalyser(CrewAIPrivaroTool):
+    name = "Contract Analyser"
+    description = "Analyses contracts with built-in PII protection"
+
+    async def _execute(self, protected_input: str, run) -> str:
+        # protected_input has PII tokenised — safe to send to LLM
+        return await your_llm.acomplete(protected_input)
+
+tool = ContractAnalyser(api_key="prvr_...", pipeline_id="...")
 ```
 
-### Agent mode (stricter policies)
+---
+
+## ProtectResult
 
 ```python
-result = privaro.protect(
-    prompt=agent_input,
-    agent_mode=True,   # Applies stricter policy preset
+result = privaro.protect("...")
+
+result.protected        # Tokenised prompt — send this to your LLM
+result.original         # Original text (never sent to Privaro servers)
+result.has_pii          # True if PII was detected
+result.is_safe          # True if all PII masked, no leaks
+result.risk_level       # "high" | "medium" | "low"
+result.risk_score       # 0.0–1.0
+result.gdpr_compliant   # True if all critical PII was masked
+result.total_detected   # Count of PII entities found
+result.total_masked     # Count of PII entities masked
+result.processing_ms    # Latency in milliseconds
+result.audit_log_id     # Supabase audit log UUID
+result.summary()        # One-line log string
+```
+
+---
+
+## Exceptions
+
+```python
+from privaro.exceptions import (
+    PrivaroError,           # Base exception
+    AuthError,              # Invalid or missing API key
+    PipelineNotFoundError,  # Pipeline UUID not found
+    PolicyBlockError,       # Request blocked by policy
+    RateLimitError,         # Too many requests
+    ProxyUnavailableError,  # Cannot reach proxy
 )
-```
-
-### Multiple clients (multiple pipelines)
-
-```python
-from privaro import PrivaroClient
-
-legal_client = PrivaroClient(api_key="prvr_xxx", pipeline_id="legal-pipeline-uuid")
-hr_client = PrivaroClient(api_key="prvr_xxx", pipeline_id="hr-pipeline-uuid")
-
-legal_result = legal_client.protect(contract_text)
-hr_result = hr_client.protect(employee_record)
-```
-
-### Async support
-
-```python
-from privaro.async_client import AsyncPrivaroClient
-
-client = AsyncPrivaroClient(api_key="prvr_xxx", pipeline_id="uuid")
-
-async def process(prompt: str):
-    result = await client.protect(prompt)
-    return result.protected
-```
-
-### Error handling
-
-```python
-from privaro.exceptions import AuthError, PolicyBlockError, ProxyUnavailableError
 
 try:
-    result = privaro.protect(prompt)
-except PolicyBlockError as e:
-    # Request blocked by policy (e.g., health data on non-approved provider)
-    logger.warning(f"Request blocked: {e}")
-    return "Request cannot be processed — sensitive data detected."
-except ProxyUnavailableError:
-    # Fallback: log and fail safely
-    logger.error("Privaro proxy unavailable")
-    raise
+    result = privaro.protect("...")
+except PolicyBlockError:
+    # PII blocked by policy — do not proceed
+    pass
 except AuthError:
-    logger.error("Invalid Privaro API key")
-    raise
+    # Check API key
+    pass
 ```
-
----
-
-## ProtectResult Reference
-
-| Property | Type | Description |
-|---|---|---|
-| `result.protected` | str | Prompt with PII replaced by tokens |
-| `result.original` | str | Original prompt (local only) |
-| `result.risk_score` | float | 0.0–1.0 composite risk score |
-| `result.risk_level` | str | "high" / "medium" / "low" |
-| `result.gdpr_compliant` | bool | True if no PII leaked |
-| `result.is_safe` | bool | True if all PII masked |
-| `result.has_pii` | bool | True if any entities detected |
-| `result.total_detected` | int | Total PII entities found |
-| `result.total_masked` | int | Entities successfully masked |
-| `result.leaked` | int | Entities that passed through |
-| `result.detections` | list[Detection] | Per-entity details |
-| `result.audit_log_id` | str | Supabase audit log UUID |
-| `result.processing_ms` | int | Proxy latency in ms |
-| `result.summary()` | str | One-line log summary |
-
----
-
-## Detection Reference
-
-| Property | Values |
-|---|---|
-| `detection.type` | `dni` `iban` `email` `full_name` `phone` `health_record` `credit_card` `ip_address` `date_of_birth` |
-| `detection.severity` | `critical` `high` `medium` `low` |
-| `detection.action` | `tokenised` `anonymised` `blocked` |
-| `detection.detector` | `regex` `presidio` |
-| `detection.confidence` | 0.0–1.0 |
-| `detection.is_high_risk` | bool |
-
----
-
-## Blockchain Verification
-
-Every `protect()` call creates an immutable audit entry certified on **Fantom Opera Mainnet** via iBS. Verify any event at:
-
-```
-https://checker.icommunitylabs.com/check/fantom_opera_mainnet/{tx_hash}
-```
-
-Access the TX hash from your Privaro dashboard → Audit Logs → ⛓️ badge.
 
 ---
 
 ## Requirements
 
 - Python 3.9+
-- Zero required dependencies (uses `urllib` from stdlib)
-- Optional: `aiohttp>=3.9` for async support
+- No required dependencies (uses `urllib` only for sync client)
+- `aiohttp>=3.8` for async support (`pip install privaro[async]`)
 
 ---
 
-## License
+## Links
 
-MIT — © 2026 by iCommunity Labs · [privaro.ai](https://privaro.ai)
-[icommunity.io](https://icommunity.io)
+- Docs: [privaro.ai/docs](https://privaro.ai/docs)
+- Dashboard: [privaro.ai/app](https://privaro.ai/app)
+- Issues: [github.com/Maperez1972/privaro-sdk-python](https://github.com/Maperez1972/privaro-sdk-python)
+- Partners: [partners@privaro.ai](mailto:partners@privaro.ai)
