@@ -1,48 +1,33 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "privaro"
 version = "0.2.0"
-description = "Privacy Infrastructure for Enterprise AI — Official Python SDK"
+description = "Privacy Infrastructure for Enterprise AI — iCommunity Labs"
 readme = "README.md"
 license = { text = "MIT" }
-authors = [{ name = "iCommunity Labs", email = "hello@icommunity.io" }]
-keywords = ["privacy", "pii", "gdpr", "ai", "llm", "compliance", "blockchain", "agent"]
+requires-python = ">=3.9"
+keywords = ["privacy", "ai", "gdpr", "pii", "llm", "agents", "compliance"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
     "Topic :: Security",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-requires-python = ">=3.9"
-dependencies = []  # Zero required dependencies — uses stdlib only
+dependencies = []
 
 [project.optional-dependencies]
-async = ["aiohttp>=3.9"]
-dev = ["pytest>=7.0", "pytest-asyncio", "aiohttp>=3.9", "black", "ruff"]
+async = ["aiohttp>=3.8"]
+dev = ["pytest>=7", "pytest-asyncio>=0.21", "aiohttp>=3.8"]
 
 [project.urls]
-Homepage = "https://privaro.io"
-Documentation = "https://privaro.io/docs"
+Homepage = "https://privaro.ai"
+Documentation = "https://privaro.ai/docs"
 Repository = "https://github.com/Maperez1972/privaro-sdk-python"
-"Bug Tracker" = "https://github.com/Maperez1972/privaro-sdk-python/issues"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["privaro*"]
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]
-
-[tool.ruff]
-line-length = 100
-target-version = "py39"
+[tool.hatch.build.targets.wheel]
+packages = ["privaro"]
