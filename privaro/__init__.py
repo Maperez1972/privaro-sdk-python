@@ -27,7 +27,7 @@ from .models import ProtectResult, Detection
 from .exceptions import PrivaroError, AuthError, PipelineNotFoundError
 from .agent import AgentRun, PrivaroCallbackHandler
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __all__ = [
     "PrivaroClient",
     "ProtectResult",
@@ -40,6 +40,8 @@ __all__ = [
     "init",
     "protect",
     "detect",
+    "relay",
+    "relay_stream",
 ]
 
 _default_client: "PrivaroClient | None" = None
@@ -48,7 +50,7 @@ _default_client: "PrivaroClient | None" = None
 def init(
     api_key: str,
     pipeline_id: str,
-    base_url: str = "https://privaro-proxy-production.up.railway.app/v1",
+    base_url: str = "https://api.privaro.ai/v1",
     timeout: float = 10.0,
 ) -> PrivaroClient:
     """
@@ -106,3 +108,13 @@ def protect(
 def detect(prompt: str) -> "ProtectResult":
     """Detect PII without masking (analysis mode)."""
     return _require_client().detect(prompt=prompt)
+
+
+def relay(messages, **kwargs):
+    """Full-cycle relay: protect, call your configured LLM, de-tokenise. See PrivaroClient.relay()."""
+    return _require_client().relay(messages, **kwargs)
+
+
+def relay_stream(messages, **kwargs):
+    """Streamed full-cycle relay. See PrivaroClient.relay_stream()."""
+    return _require_client().relay_stream(messages, **kwargs)

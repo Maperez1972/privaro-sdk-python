@@ -78,7 +78,7 @@ class AgentRun:
         self,
         api_key: Optional[str] = None,
         pipeline_id: Optional[str] = None,
-        base_url: str = "https://privaro-proxy-production.up.railway.app",
+        base_url: str = "https://api.privaro.ai",
         agent_name: Optional[str] = None,
         agent_framework: Optional[str] = None,
         external_run_id: Optional[str] = None,
@@ -122,7 +122,13 @@ class AgentRun:
             url,
             data=data,
             headers={
-                "Authorization": f"Bearer {self._api_key}",
+                # Fixed 2026-07-24 — the proxy authenticates with
+                # X-Privaro-Key (see app/routers/agent.py's own docstring:
+                # "Authentication: X-Privaro-Key header, same as
+                # /v1/proxy/protect"). This sent Authorization: Bearer,
+                # which the proxy never checks — every call using AgentRun
+                # has been failing with 401 since this SDK's first release.
+                "X-Privaro-Key": self._api_key,
                 "Content-Type": "application/json",
             },
             method=method,

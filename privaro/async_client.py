@@ -57,7 +57,7 @@ class AsyncAgentRun:
                     return step.first_content
     """
 
-    BASE_URL = "https://privaro-proxy-production.up.railway.app"
+    BASE_URL = "https://api.privaro.ai"
 
     def __init__(
         self,
@@ -101,7 +101,11 @@ class AsyncAgentRun:
     async def __aenter__(self) -> "AsyncAgentRun":
         self._session = aiohttp.ClientSession(
             headers={
-                "Authorization": f"Bearer {self._api_key}",
+                # Fixed 2026-07-24 — same bug as the sync AgentRun: the
+                # proxy authenticates with X-Privaro-Key, not Authorization
+                # Bearer. Every call made through this async client has
+                # been failing with 401 since this SDK's first release.
+                "X-Privaro-Key": self._api_key,
                 "Content-Type": "application/json",
             },
             timeout=self._timeout,

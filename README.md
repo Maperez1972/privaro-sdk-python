@@ -32,6 +32,50 @@ response = your_llm.complete(result.protected)   # LLM never sees real PII
 
 ---
 
+## Full-cycle relay
+
+Let Privaro protect the messages, call your configured LLM (the key you
+set in `/app/admin/providers`), and de-tokenise the response for you.
+
+### `relay()` — single response
+
+```python
+result = privaro.relay([
+    {"role": "user", "content": "Soy Juan Pérez, ¿podéis confirmarme mi cita?"}
+])
+print(result["response"])  # already de-tokenised, ready to show
+```
+
+### `relay_stream()` — for chat UIs
+
+Yields text deltas as the LLM generates them (SSE under the hood).
+Deltas are already de-tokenised — never a raw token, safe to render
+directly.
+
+```python
+for delta in privaro.relay_stream([
+    {"role": "user", "content": "Soy Juan Pérez, ¿podéis confirmarme mi cita?"}
+]):
+    print(delta, end="", flush=True)
+```
+
+Supported for streaming today: OpenAI, Azure OpenAI, Anthropic. Other
+providers raise `PrivaroError` — use `relay()` (non-streaming) for those.
+`idempotency_key` is not supported on `relay_stream()` (replaying a
+completed stream doesn't have the same semantics as retrying a short
+response) — use `relay()` if you need idempotent retries.
+
+### Consistent tokens across turns — `conversation_id`
+
+Pass your own conversation/session id to `protect()` or `relay()`/`relay_stream()`
+and the same PII value always gets the same token within that conversation:
+
+```python
+result = privaro.relay(messages, conversation_id="your-session-id")
+```
+
+---
+
 ## Agent Support
 
 ### Sync — AgentRun (LangChain, direct)

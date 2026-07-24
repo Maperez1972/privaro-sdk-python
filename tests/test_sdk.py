@@ -158,3 +158,123 @@ class TestProtectResultProperties:
         assert "1 entities detected" in summary
         assert "high" in summary
         assert "50ms" in summary
+
+
+class TestRelay:
+    def setup_method(self):
+        self.client = PrivaroClient(api_key=MOCK_API_KEY, pipeline_id=MOCK_PIPELINE_ID)
+
+    def test_relay_calls_complete_endpoint(self):
+        self.client._request = MagicMock(return_value={
+            "request_id": "relay_abc", "provider": "openai", "model": "gpt-4o",
+            "response": "Claro, Juan Pérez, su cita es el...",
+            "response_raw": None, "pii_detected": 1, "pii_masked": 1,
+            "risk_score": 0.3, "gdpr_compliant": True, "audit_log_id": "uuid",
+            "tokens_replaced": 1, "usage": {}, "processing_ms": 500,
+        })
+        result = self.client.relay([{"role": "user", "content": "hola"}])
+        assert result["response"] == "Claro, Juan Pérez, su cita es el..."
+        # Confirm it called /relay/complete, not /proxy/protect
+        call_args = self.client._request.call_args
+        assert call_args[0][1] == "/relay/complete"
+
+    def test_relay_passes_conversation_id_and_idempotency_key(self):
+        self.client._request = MagicMock(return_value={"response": "ok"})
+        self.client.relay(
+            [{"role": "user", "content": "hola"}],
+            conversation_id="conv-123",
+            idempotency_key="idem-456",
+        )
+        call_args = self.client._request.call_args
+        payload = call_args[0][2]
+        assert payload["conversation_id"] == "conv-123"
+        assert call_args[0][3] == "idem-456"  # 4th positional arg is idempotency_key
+
+
+class FakeStreamResponse:
+    """Mimics an http.client.HTTPResponse enough for relay_stream()'s
+    line-by-line iteration and context-manager usage."""
+
+    def __init__(self, chunks: list[bytes]):
+        self._chunks = chunks
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        pass
+
+    def close(self):
+        pass
+
+    def __iter__(self):
+        return iter(self._chunks)
+
+
+class TestRelayStream:
+    def setup_method(self):
+        self.client = PrivaroClient(api_key=MOCK_API_KEY, pipeline_id=MOCK_PIPELINE_ID)
+
+    def test_yields_detokenised_deltas(self):
+        chunks = [
+            b'data: {"delta": "Claro, "}\n\n',
+            b'data: {"delta": "Juan P\xc3\xa9rez"}\n\n',
+            b'data: {"delta": ", su cita es el..."}\n\n',
+            b"data: [DONE]\n\n",
+        ]
+        with patch("urllib.request.urlopen", return_value=FakeStreamResponse(chunks)):
+            deltas = list(self.client.relay_stream([{"role": "user", "content": "hola"}]))
+        assert "".join(deltas) == "Claro, Juan Pérez, su cita es el..."
+
+    def test_handles_event_split_across_chunks(self):
+        # The exact same logical event, but the chunk boundary falls
+        # mid-JSON — must still parse correctly once buffered.
+        chunks = [
+            b'data: {"del',
+            b'ta": "hola mundo"}\n\ndata: [DONE]\n\n',
+        ]
+        with patch("urllib.request.urlopen", return_value=FakeStreamResponse(chunks)):
+            deltas = list(self.client.relay_stream([{"role": "user", "content": "hola"}]))
+        assert "".join(deltas) == "hola mundo"
+
+    def test_raises_on_provider_error(self):
+        chunks = [
+            b'data: {"error": "OpenAI error 401: invalid key", "provider": "openai"}\n\n',
+            b"data: [DONE]\n\n",
+        ]
+        with patch("urllib.request.urlopen", return_value=FakeStreamResponse(chunks)):
+            with pytest.raises(PrivaroError):
+                list(self.client.relay_stream([{"role": "user", "content": "hola"}]))
+
+
+class TestAgentRunAuthHeader:
+    """Regression test for a real bug: AgentRun sent Authorization: Bearer,
+    but the proxy only ever checks X-Privaro-Key — every AgentRun call has
+    been failing with 401 since this SDK's first release, until fixed
+    2026-07-24."""
+
+    def test_sync_agent_run_uses_x_privaro_key_header(self):
+        from privaro.agent import AgentRun
+
+        captured = {}
+
+        def fake_urlopen(req, timeout=None):
+            captured["headers"] = dict(req.header_items())
+            response = MagicMock()
+            response.read.return_value = json.dumps({
+                "agent_run_id": "run-1", "pipeline_id": MOCK_PIPELINE_ID, "status": "running",
+            }).encode()
+            response.__enter__ = lambda s: response
+            response.__exit__ = lambda s, *a: None
+            return response
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            run = AgentRun(api_key=MOCK_API_KEY, pipeline_id=MOCK_PIPELINE_ID)
+            run.start()
+
+        # Header names are capitalized by urllib (X-privaro-key), so compare
+        # case-insensitively rather than asserting exact casing.
+        header_names = {k.lower(): v for k, v in captured["headers"].items()}
+        assert "x-privaro-key" in header_names
+        assert header_names["x-privaro-key"] == MOCK_API_KEY
+        assert "authorization" not in header_names
