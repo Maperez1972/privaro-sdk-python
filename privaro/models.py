@@ -2,7 +2,7 @@
 Privaro SDK — Data models
 """
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Dict, Any
 
 
 @dataclass
@@ -45,6 +45,12 @@ class ProtectResult:
 
     # Performance
     processing_ms: int = 0
+
+    # Context Optimization — populated only when optimize_context=True was
+    # passed to protect(). Added 2026-07-30 after a full integration audit
+    # found the API already returns this field but the SDK silently
+    # dropped it during response parsing.
+    compression_stats: Optional[Dict[str, Any]] = None
 
     @property
     def risk_level(self) -> str:

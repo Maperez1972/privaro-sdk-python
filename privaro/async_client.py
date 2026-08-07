@@ -27,6 +27,7 @@ class AsyncStepResult:
     risk_score: float
     gdpr_compliant: bool
     audit_step_id: Optional[str] = None
+    compression_stats: Optional[Dict[str, Any]] = None
 
     @property
     def first_content(self) -> str:
@@ -152,8 +153,14 @@ class AsyncAgentRun:
         messages: Union[List[Dict], str],
         step_index: Optional[int] = None,
         mode: str = "tokenise",
+        optimize_context: bool = False,
     ) -> AsyncStepResult:
-        """Protect messages before sending to LLM."""
+        """Protect messages before sending to LLM.
+
+        optimize_context: compress tokenised messages to reduce tokens
+        sent to your LLM. Never touches PII tokens ([XX-0001]) — see
+        result.compression_stats for tokens_saved / compression_ratio.
+        """
         if not self._run_id:
             raise PrivaroError("Run not started. Use as async context manager.")
 
@@ -169,6 +176,7 @@ class AsyncAgentRun:
             "messages": msgs,
             "step_index": idx,
             "mode": mode,
+            "optimize_context": optimize_context,
         })
         self._step_counter += 1
 
@@ -181,6 +189,7 @@ class AsyncAgentRun:
             risk_score=result["risk_score"],
             gdpr_compliant=result["gdpr_compliant"],
             audit_step_id=result.get("audit_step_id"),
+            compression_stats=result.get("compression_stats") or None,
         )
 
     async def reveal(self, text: str) -> str:

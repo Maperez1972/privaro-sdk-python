@@ -55,6 +55,7 @@ class StepResult:
     risk_score: float
     gdpr_compliant: bool
     audit_step_id: Optional[str] = None
+    compression_stats: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -166,6 +167,7 @@ class AgentRun:
         messages: Union[List[Dict], str],
         step_index: Optional[int] = None,
         mode: str = "tokenise",
+        optimize_context: bool = False,
     ) -> StepResult:
         """
         Protect a step's messages before sending to LLM.
@@ -173,6 +175,9 @@ class AgentRun:
         messages can be:
           - List of dicts: [{"role": "user", "content": "..."}]
           - str: plain string (wrapped as user message)
+        optimize_context: compress tokenised messages to reduce tokens
+          sent to your LLM. Never touches PII tokens ([XX-0001]) — see
+          result.compression_stats for tokens_saved / compression_ratio.
 
         Returns StepResult with protected_messages ready to send to LLM.
         """
@@ -198,6 +203,7 @@ class AgentRun:
             "messages": msgs,
             "step_index": idx,
             "mode": mode,
+            "optimize_context": optimize_context,
         })
         self._step_counter += 1
 
@@ -210,6 +216,7 @@ class AgentRun:
             risk_score=result["risk_score"],
             gdpr_compliant=result["gdpr_compliant"],
             audit_step_id=result.get("audit_step_id"),
+            compression_stats=result.get("compression_stats") or None,
         )
 
     def reveal(self, text: str) -> RevealResult:

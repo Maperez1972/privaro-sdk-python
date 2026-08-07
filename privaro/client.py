@@ -130,6 +130,7 @@ class PrivaroClient:
             risk_score=stats.get("risk_score"),
             gdpr_compliant=raw.get("gdpr_compliant", True),
             processing_ms=stats.get("processing_ms", 0),
+            compression_stats=raw.get("compression_stats") or None,
         )
 
     def protect(
@@ -141,6 +142,7 @@ class PrivaroClient:
         include_detections: bool = True,
         conversation_id: Optional[str] = None,
         idempotency_key: Optional[str] = None,
+        optimize_context: bool = False,
     ) -> ProtectResult:
         """
         Detect and mask PII in a prompt. Writes to audit log.
@@ -156,6 +158,11 @@ class PrivaroClient:
             idempotency_key:    Safe-retry key — a repeated call with the
                                  same key returns the exact same response
                                  without re-billing
+            optimize_context:   Compress the tokenised prompt before
+                                 returning it, to reduce tokens sent to
+                                 your LLM. Never touches PII tokens
+                                 ([XX-0001]) — see result.compression_stats
+                                 for tokens_saved / compression_ratio.
 
         Returns:
             ProtectResult — use .protected to send to your LLM
@@ -177,6 +184,7 @@ class PrivaroClient:
                 "reversible": reversible,
                 "agent_mode": agent_mode,
                 "include_detections": include_detections,
+                "optimize_context": optimize_context,
             },
         }
         if conversation_id:
