@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0 — 2026-08-07
+
+Found during a full backend integration audit of Context Optimization (privaro-proxy PR #1): the API gained the ability to compress tokenised prompts/messages before sending them to your LLM, but the SDK had no way to request or read it.
+
+- **Added `optimize_context: bool = False` to `PrivaroClient.protect()`, `AgentRun.protect()` (sync), and `AsyncAgentRun.protect()`** — three separate call sites, none sharing a common base. Compresses tokenised content before returning it, reducing tokens sent to your LLM. Never touches PII tokens (`[XX-0001]`) — verified end-to-end against real documents before release.
+- **Added `compression_stats: Optional[Dict[str, Any]] = None`** to `ProtectResult`, `StepResult`, and `AsyncStepResult` — populated only when `optimize_context=True` was passed and the compressor actually ran.
+- No breaking changes — new parameter defaults to `False`, new field defaults to `None`.
+
 ## 0.3.0 — 2026-07-24
 
 Prompted by a real integration in progress (Octupus/Robin AI), and a
