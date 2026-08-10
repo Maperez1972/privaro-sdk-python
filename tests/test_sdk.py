@@ -8,8 +8,10 @@ import json
 
 import privaro
 from privaro.client import PrivaroClient
-from privaro.models import ProtectResult, Detection
-from privaro.exceptions import AuthError, PipelineNotFoundError, PrivaroError
+from privaro.models import ProtectResult, Detection, ProtectOutputResult
+from privaro.exceptions import (
+    AuthError, PipelineNotFoundError, PrivaroError, OutputScanningDisabledError,
+)
 
 
 MOCK_PIPELINE_ID = "c93aed87-b440-4de0-bb21-54a938e475f2"
@@ -245,6 +247,105 @@ class TestRelayStream:
         with patch("urllib.request.urlopen", return_value=FakeStreamResponse(chunks)):
             with pytest.raises(PrivaroError):
                 list(self.client.relay_stream([{"role": "user", "content": "hola"}]))
+
+
+MOCK_PROTECT_OUTPUT_RESPONSE = {
+    "request_id": "req_out_1",
+    "protected_response": "Según nuestros registros, [NM-0001] tiene DNI [ID-0001].",
+    "detections": [
+        {
+            "type": "dni", "severity": "critical", "action": "tokenised",
+            "token": "[ID-0001]", "confidence": 0.95, "detector": "regex",
+            "start": 45, "end": 54,
+        },
+    ],
+    "stats": {
+        "total_detected": 1, "total_masked": 1, "leaked": 0,
+        "coverage_pct": 100.0, "processing_ms": 33, "risk_score": 0.7,
+    },
+    "audit_log_id": "uuid-output-audit-log",
+    "gdpr_compliant": True,
+    "scan_mode": "shadow",
+    "response_modified": True,
+}
+
+
+class TestProtectOutput:
+    def setup_method(self):
+        self.client = PrivaroClient(api_key=MOCK_API_KEY, pipeline_id=MOCK_PIPELINE_ID)
+
+    def _mock_request(self, response: dict):
+        self.client._request = MagicMock(return_value=response)
+
+    def test_protect_output_returns_result(self):
+        self._mock_request(MOCK_PROTECT_OUTPUT_RESPONSE)
+        result = self.client.protect_output(
+            "Según nuestros registros, Juan Perez tiene DNI 12345678Z.",
+            conversation_id="conv-1",
+        )
+
+        assert isinstance(result, ProtectOutputResult)
+        assert result.protected == MOCK_PROTECT_OUTPUT_RESPONSE["protected_response"]
+        assert result.total_detected == 1
+        assert result.total_masked == 1
+        assert result.leaked == 0
+        assert result.scan_mode == "shadow"
+        assert result.response_modified is True
+        assert result.gdpr_compliant is True
+        assert result.risk_score == pytest.approx(0.7)
+
+    def test_protect_output_calls_correct_endpoint(self):
+        self._mock_request(MOCK_PROTECT_OUTPUT_RESPONSE)
+        self.client.protect_output("respuesta del LLM", conversation_id="conv-1")
+        call_args = self.client._request.call_args
+        assert call_args[0][1] == "/proxy/protect-output"
+        payload = call_args[0][2]
+        assert payload["response_text"] == "respuesta del LLM"
+        assert payload["conversation_id"] == "conv-1"
+
+    def test_protect_output_detections_parsed(self):
+        self._mock_request(MOCK_PROTECT_OUTPUT_RESPONSE)
+        result = self.client.protect_output("texto", conversation_id="conv-1")
+        assert len(result.detections) == 1
+        dni = result.detections[0]
+        assert dni.type == "dni"
+        assert dni.token == "[ID-0001]"
+        assert dni.is_high_risk is True
+
+    def test_protect_output_empty_text_returns_early(self):
+        result = self.client.protect_output("", conversation_id="conv-1")
+        assert result.protected == ""
+        assert result.total_detected == 0
+
+    def test_protect_output_raises_when_scanning_disabled(self):
+        import json as _json
+        import urllib.error
+
+        http_error = urllib.error.HTTPError(
+            url="https://api.privaro.ai/v1/proxy/protect-output",
+            code=403,
+            msg="Forbidden",
+            hdrs=None,
+            fp=MagicMock(read=lambda: _json.dumps({
+                "detail": {
+                    "error": "output_scanning_disabled",
+                    "message": "This pipeline has not enabled output-direction PII scanning.",
+                }
+            }).encode()),
+        )
+
+        def raise_it(*a, **kw):
+            raise http_error
+
+        with patch("urllib.request.urlopen", side_effect=raise_it):
+            with pytest.raises(OutputScanningDisabledError, match="output-direction"):
+                self.client.protect_output("texto con PII", conversation_id="conv-1")
+
+    def test_protect_output_enforce_mode_reflected(self):
+        enforce_response = dict(MOCK_PROTECT_OUTPUT_RESPONSE, scan_mode="enforce")
+        self._mock_request(enforce_response)
+        result = self.client.protect_output("texto", conversation_id="conv-1")
+        assert result.scan_mode == "enforce"
 
 
 class TestAgentRunAuthHeader:

@@ -76,6 +76,31 @@ result = privaro.relay(messages, conversation_id="your-session-id")
 
 ---
 
+## Output-direction scanning — `protect_output()`
+
+`relay()`/`relay_stream()` already scan the LLM's response for you
+(Privaro makes the LLM call itself there). If instead you call
+`protect()` and then hit your own LLM directly, use `protect_output()`
+to scan that response before returning it to your end user — RAG
+retrieval, tool-call results, and model memorization can all leak PII
+that was never in the original prompt.
+
+Requires the pipeline to have output scanning enabled (dashboard:
+Pipelines → Settings → Output scanning) — otherwise raises
+`OutputScanningDisabledError` rather than silently skipping the scan.
+
+```python
+result = privaro.protect_output(
+    llm_response_text,
+    conversation_id="your-session-id",  # same id used for protect()
+)
+print(result.protected)       # send this to your end user
+print(result.scan_mode)       # "shadow" (informational) | "enforce"
+print(result.response_modified)
+```
+
+---
+
 ## Agent Support
 
 ### Sync — AgentRun (LangChain, direct)
@@ -179,12 +204,14 @@ result.summary()        # One-line log string
 
 ```python
 from privaro.exceptions import (
-    PrivaroError,           # Base exception
-    AuthError,              # Invalid or missing API key
-    PipelineNotFoundError,  # Pipeline UUID not found
-    PolicyBlockError,       # Request blocked by policy
-    RateLimitError,         # Too many requests
-    ProxyUnavailableError,  # Cannot reach proxy
+    PrivaroError,                # Base exception
+    AuthError,                   # Invalid or missing API key
+    PipelineNotFoundError,       # Pipeline UUID not found
+    PolicyBlockError,            # Request blocked by policy
+    RateLimitError,               # Too many requests
+    ProxyUnavailableError,        # Cannot reach proxy
+    OutputScanningDisabledError,  # protect_output() called on a pipeline
+                                  # that hasn't enabled output scanning
 )
 
 try:
