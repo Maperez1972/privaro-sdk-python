@@ -81,3 +81,70 @@ class ProtectResult:
             f"gdpr={'✓' if self.gdpr_compliant else '✗'}, "
             f"{self.processing_ms}ms"
         )
+
+
+@dataclass
+class ProtectOutputResult:
+    """
+    Result of a protect_output() call — scans an LLM RESPONSE for PII
+    (as opposed to ProtectResult, which scans a prompt going INTO the
+    LLM). Added 2026-08 for output-direction PII detection: customers
+    who call protect() themselves, send the protected prompt to their
+    OWN LLM, and get a raw response back had zero Privaro visibility
+    into that response until now.
+    """
+
+    # Core output
+    protected: str                          # Response text with PII replaced by tokens
+    original: str                           # Original LLM response text (kept locally)
+    request_id: str
+    audit_log_id: Optional[str]
+
+    # PII summary
+    detections: list[Detection] = field(default_factory=list)
+    total_detected: int = 0
+    total_masked: int = 0
+    leaked: int = 0
+    coverage_pct: float = 100.0
+
+    risk_score: Optional[float] = None
+    gdpr_compliant: bool = True
+
+    processing_ms: int = 0
+
+    # "shadow" (informational — detections resolved but never masked
+    # server-side beyond what this call itself did) or "enforce"
+    # (pipeline.output_scanning_mode) — mirrors the pipeline's dashboard
+    # setting at the time of the call.
+    scan_mode: str = "shadow"
+
+    # True if the returned .protected text differs from .original —
+    # i.e. this call actually masked/tokenised something.
+    response_modified: bool = False
+
+    @property
+    def risk_level(self) -> str:
+        if self.risk_score is None:
+            return "unknown"
+        if self.risk_score >= 0.7:
+            return "high"
+        if self.risk_score >= 0.4:
+            return "medium"
+        return "low"
+
+    @property
+    def has_pii(self) -> bool:
+        return self.total_detected > 0
+
+    @property
+    def is_safe(self) -> bool:
+        return self.gdpr_compliant and self.leaked == 0
+
+    def summary(self) -> str:
+        return (
+            f"[Privaro:output] {self.total_detected} entities detected, "
+            f"{self.total_masked} masked, mode={self.scan_mode}, "
+            f"risk={self.risk_level} ({self.risk_score or 0:.2f}), "
+            f"gdpr={'✓' if self.gdpr_compliant else '✗'}, "
+            f"{self.processing_ms}ms"
+        )

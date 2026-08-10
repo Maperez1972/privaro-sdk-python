@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.5.0 — 2026-08-10
+
+Output-direction PII detection. Until now the SDK (and the proxy) only
+ever scanned text going *into* an LLM. Direct production evidence showed
+the gap: `conversation_messages` had 1,175 PII detections across 76 input
+messages and zero across 78 output messages, and `pipelines.total_leaked`
+read 0 across every pipeline. `relay()`/`relay_stream()` already scan the
+LLM response inline (Privaro makes the LLM call itself there), but
+customers who call `protect()` and then hit their own LLM directly had no
+equivalent — until now.
+
+- **Added `PrivaroClient.protect_output(response_text, ...)`** and the
+  module-level `privaro.protect_output(...)` — calls the new
+  `POST /v1/proxy/protect-output` endpoint to scan/mask PII in your LLM's
+  raw response text before you return it to your own end user. Same
+  `mode`/`reversible`/`conversation_id`/`idempotency_key` contract as
+  `protect()` — pass the same `conversation_id` you used for the matching
+  `protect()` call so tokens replace consistently across the turn.
+- **Added `ProtectOutputResult`** (`privaro.models`) — mirrors
+  `ProtectResult` but adds `.scan_mode` (`"shadow"` | `"enforce"`,
+  reflecting the pipeline's dashboard setting) and `.response_modified`.
+- **Added `OutputScanningDisabledError`** — raised (not a silent
+  passthrough) when the target pipeline hasn't opted into output
+  scanning (`pipeline.output_scanning_enabled=false`). Enable it per
+  pipeline in the dashboard: Pipelines → Settings → Output scanning.
+- No breaking changes to existing methods.
+
 ## 0.4.0 — 2026-08-07
 
 Found during a full backend integration audit of Context Optimization (privaro-proxy PR #1): the API gained the ability to compress tokenised prompts/messages before sending them to your LLM, but the SDK had no way to request or read it.

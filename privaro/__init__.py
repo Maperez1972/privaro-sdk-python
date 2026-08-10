@@ -23,22 +23,27 @@ Usage (agent async / CrewAI):
 """
 
 from .client import PrivaroClient
-from .models import ProtectResult, Detection
-from .exceptions import PrivaroError, AuthError, PipelineNotFoundError
+from .models import ProtectResult, Detection, ProtectOutputResult
+from .exceptions import (
+    PrivaroError, AuthError, PipelineNotFoundError, OutputScanningDisabledError,
+)
 from .agent import AgentRun, PrivaroCallbackHandler
 
-__version__ = "0.3.0"
+__version__ = "0.5.0"
 __all__ = [
     "PrivaroClient",
     "ProtectResult",
+    "ProtectOutputResult",
     "Detection",
     "PrivaroError",
     "AuthError",
     "PipelineNotFoundError",
+    "OutputScanningDisabledError",
     "AgentRun",
     "PrivaroCallbackHandler",
     "init",
     "protect",
+    "protect_output",
     "detect",
     "relay",
     "relay_stream",
@@ -108,6 +113,27 @@ def protect(
 def detect(prompt: str) -> "ProtectResult":
     """Detect PII without masking (analysis mode)."""
     return _require_client().detect(prompt=prompt)
+
+
+def protect_output(
+    response_text: str,
+    mode: str = "tokenise",
+    reversible: bool = True,
+    agent_mode: bool = False,
+    include_detections: bool = True,
+    conversation_id: str = None,
+) -> "ProtectOutputResult":
+    """
+    Scan and mask PII in your own LLM's response text (output direction).
+    Requires the pipeline to have output_scanning_enabled — see
+    PrivaroClient.protect_output() for full details and
+    OutputScanningDisabledError.
+    """
+    return _require_client().protect_output(
+        response_text=response_text, mode=mode, reversible=reversible,
+        agent_mode=agent_mode, include_detections=include_detections,
+        conversation_id=conversation_id,
+    )
 
 
 def relay(messages, **kwargs):

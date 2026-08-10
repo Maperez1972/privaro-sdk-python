@@ -3,10 +3,11 @@ Privaro SDK — HTTP Client
 """
 import json
 from typing import Optional, List, Dict, Iterator, Any
-from .models import ProtectResult, Detection
+from .models import ProtectResult, Detection, ProtectOutputResult
 from .exceptions import (
     PrivaroError, AuthError, PipelineNotFoundError,
     PolicyBlockError, RateLimitError, ProxyUnavailableError,
+    OutputScanningDisabledError,
 )
 
 
@@ -79,6 +80,17 @@ class PrivaroClient:
             if e.code == 401:
                 raise AuthError("Invalid API key or unauthorized access.")
             if e.code == 403:
+                detail = body.get("detail", {})
+                if isinstance(detail, dict) and detail.get("error") == "output_scanning_disabled":
+                    raise OutputScanningDisabledError(
+                        detail.get(
+                            "message",
+                            "This pipeline has not enabled output-direction PII "
+                            "scanning. Enable output_scanning_enabled for this "
+                            "pipeline in the dashboard (Pipelines → Settings) "
+                            "before calling protect_output().",
+                        )
+                    )
                 raise AuthError("Access denied — check API key permissions.")
             if e.code == 404:
                 raise PipelineNotFoundError(
@@ -132,6 +144,109 @@ class PrivaroClient:
             processing_ms=stats.get("processing_ms", 0),
             compression_stats=raw.get("compression_stats") or None,
         )
+
+    def _parse_output_result(self, raw: dict, original: str) -> ProtectOutputResult:
+        """Parse /proxy/protect-output API response into ProtectOutputResult."""
+        detections = [
+            Detection(
+                type=d.get("type", ""),
+                severity=d.get("severity", "low"),
+                action=d.get("action", "detected"),
+                token=d.get("token"),
+                confidence=d.get("confidence", 1.0),
+                detector=d.get("detector", "regex"),
+                start=d.get("start"),
+                end=d.get("end"),
+            )
+            for d in raw.get("detections", [])
+        ]
+
+        stats = raw.get("stats", {})
+
+        return ProtectOutputResult(
+            protected=raw.get("protected_response", original),
+            original=original,
+            request_id=raw.get("request_id", ""),
+            audit_log_id=raw.get("audit_log_id"),
+            detections=detections,
+            total_detected=stats.get("total_detected", 0),
+            total_masked=stats.get("total_masked", 0),
+            leaked=stats.get("leaked", 0),
+            coverage_pct=stats.get("coverage_pct", 100.0),
+            risk_score=stats.get("risk_score"),
+            gdpr_compliant=raw.get("gdpr_compliant", True),
+            processing_ms=stats.get("processing_ms", 0),
+            scan_mode=raw.get("scan_mode", "shadow"),
+            response_modified=raw.get("response_modified", False),
+        )
+
+    def protect_output(
+        self,
+        response_text: str,
+        mode: str = "tokenise",
+        reversible: bool = True,
+        agent_mode: bool = False,
+        include_detections: bool = True,
+        conversation_id: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
+    ) -> ProtectOutputResult:
+        """
+        Scan and mask PII in an LLM RESPONSE (output direction), for
+        customers who call protect() themselves, send the protected
+        prompt to their OWN LLM, and get a raw response back with zero
+        Privaro involvement — as opposed to relay()/relay_stream(),
+        where Privaro makes the LLM call itself and already scans the
+        response inline.
+
+        Requires the pipeline to have output-direction scanning enabled
+        (dashboard: Pipelines → Settings → Output scanning). Raises
+        OutputScanningDisabledError otherwise — this call never silently
+        passes text through unscanned.
+
+        Args:
+            response_text:      Your LLM's raw response text to scan
+            mode:                tokenise | anonymise | block
+            reversible:          Store reversible tokens in vault. If True,
+                                 conversation_id is required — pass the SAME
+                                 conversation_id used for the matching
+                                 protect() call so tokens replace consistently.
+            agent_mode:          Stricter policies for agent pipelines
+            include_detections:  Include per-entity details in response
+            conversation_id:     Must match the protect() call for this turn
+                                 when reversible=True
+            idempotency_key:     Safe-retry key
+
+        Returns:
+            ProtectOutputResult — use .protected as the text you actually
+            return to your end user; .scan_mode tells you whether this
+            pipeline is in "shadow" (informational) or "enforce" mode.
+
+        Raises:
+            AuthError, PipelineNotFoundError, OutputScanningDisabledError,
+            PolicyBlockError, PrivaroError
+        """
+        if not response_text or not response_text.strip():
+            return ProtectOutputResult(
+                protected="", original="", request_id="",
+                audit_log_id=None, gdpr_compliant=True,
+            )
+
+        payload: Dict[str, Any] = {
+            "pipeline_id": self.pipeline_id,
+            "response_text": response_text,
+            "options": {
+                "mode": mode,
+                "reversible": reversible,
+                "agent_mode": agent_mode,
+                "include_detections": include_detections,
+            },
+        }
+        if conversation_id:
+            payload["conversation_id"] = conversation_id
+
+        raw = self._request("POST", "/proxy/protect-output", payload, idempotency_key)
+
+        return self._parse_output_result(raw, original=response_text)
 
     def protect(
         self,
