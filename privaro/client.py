@@ -2,8 +2,9 @@
 Privaro SDK — HTTP Client
 """
 import json
+import time
 from typing import Optional, List, Dict, Iterator, Any
-from .models import ProtectResult, Detection, ProtectOutputResult
+from .models import ProtectResult, Detection, ProtectOutputResult, ProtectDocumentResult, DocumentChunk
 from .exceptions import (
     PrivaroError, AuthError, PipelineNotFoundError,
     PolicyBlockError, RateLimitError, ProxyUnavailableError,
@@ -479,6 +480,121 @@ class PrivaroClient:
                             yield delta
         finally:
             resp.close()
+
+    def protect_document(
+        self,
+        document: str,
+        pipeline_id: Optional[str] = None,
+        document_id: Optional[str] = None,
+        mode: str = "tokenise",
+        reversible: bool = True,
+        use_nlp: bool = True,
+        chunk_size: int = 512,
+        poll_interval_seconds: float = 2.0,
+        poll_timeout_seconds: float = 300.0,
+    ) -> ProtectDocumentResult:
+        """
+        Protect a WHOLE document before ingesting it into a vector store
+        for RAG (Privaro Ingest — Fase 1 of the RAG expansion), rather
+        than a single chat prompt. Chunking happens server-side, AFTER
+        tokenisation — chunk boundaries never split a Privaro token
+        ([XX-0001]) across two chunks.
+
+        Large documents may be processed asynchronously by the server
+        (returns { status: "processing", job_id }); this method polls
+        GET /v1/proxy/protect-document/{job_id} transparently until the
+        result is ready, so callers always get a single call that
+        returns a finished result — never a partial/in-progress state.
+
+        Args:
+            document:              Full document text (no size limit
+                                    this SDK enforces — the API itself
+                                    caps at 2,000,000 characters)
+            pipeline_id:           Defaults to the client's configured
+                                    pipeline_id if not given
+            document_id:           Your own external reference for this
+                                    document (echoed back in stats, not
+                                    otherwise used)
+            mode:                  tokenise | anonymise | block
+            reversible:            Store reversible tokens in vault
+            use_nlp:               Run Tier 2 (Presidio) in addition to
+                                    Tier 1 regex — slower on large
+                                    documents (see the RAG plan's Fase 0
+                                    measurements) but catches names/PII
+                                    with no adjacent keyword
+            chunk_size:            Target characters per chunk (64-8192)
+            poll_interval_seconds: How often to check job status for an
+                                    async (large-document) request
+            poll_timeout_seconds:  Give up waiting after this long and
+                                    raise PrivaroError — the job keeps
+                                    running server-side regardless; call
+                                    protect_document() again later isn't
+                                    supported yet, poll
+                                    GET /v1/proxy/protect-document/{job_id}
+                                    directly via a lower-level HTTP call
+                                    if you need to resume watching it
+
+        Returns:
+            ProtectDocumentResult — use .protected_document for the full
+            text, or .chunks for ready-to-embed pieces
+
+        Raises:
+            AuthError, PipelineNotFoundError, PolicyBlockError,
+            PrivaroError (including on job timeout or a failed job)
+        """
+        payload = {
+            "pipeline_id": pipeline_id or self.pipeline_id,
+            "document": document,
+            "document_id": document_id,
+            "options": {
+                "mode": mode,
+                "reversible": reversible,
+                "use_nlp": use_nlp,
+                "chunk_size": chunk_size,
+            },
+        }
+        raw = self._request("POST", "/v1/proxy/protect-document", payload)
+
+        if raw.get("status") == "processing" and raw.get("job_id"):
+            job_id = raw["job_id"]
+            deadline = time.monotonic() + poll_timeout_seconds
+            while True:
+                if time.monotonic() >= deadline:
+                    raise PrivaroError(
+                        f"protect_document job {job_id} did not complete within "
+                        f"{poll_timeout_seconds}s — it may still finish server-side; "
+                        f"increase poll_timeout_seconds or check "
+                        f"GET /v1/proxy/protect-document/{job_id} directly."
+                    )
+                time.sleep(poll_interval_seconds)
+                raw = self._request("GET", f"/v1/proxy/protect-document/{job_id}", {})
+                if raw.get("status") != "processing":
+                    break
+
+        if raw.get("status") == "failed":
+            raise PrivaroError(
+                f"protect_document failed: {raw.get('degraded_reason', 'unknown error')}"
+            )
+
+        chunks = [DocumentChunk(**c) for c in (raw.get("chunks") or [])]
+        detections = [
+            Detection(
+                type=d.get("type", ""), severity=d.get("severity", ""),
+                action=d.get("action", ""), token=d.get("token"),
+                confidence=d.get("confidence", 1.0), detector=d.get("detector", "regex"),
+                start=d.get("start"), end=d.get("end"),
+            )
+            for d in (raw.get("detections") or [])
+        ]
+
+        return ProtectDocumentResult(
+            request_id=raw.get("request_id", ""),
+            protected_document=raw.get("protected_document", ""),
+            chunks=chunks,
+            detections=detections,
+            stats=raw.get("stats") or {},
+            job_id=raw.get("job_id"),
+        )
 
     def health(self) -> dict:
         """Check proxy health. Returns status dict."""
