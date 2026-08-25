@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.6.0 — 2026-08-25
+
+Privaro Ingest support (Fase 1 of the RAG expansion plan). New
+`protect_document()` on `PrivaroClient` — protects a whole document
+(e.g. before indexing it into a vector store for RAG) rather than a
+single chat prompt. Chunking happens server-side, after tokenisation,
+so chunk boundaries never split a Privaro token across two chunks.
+
+Handles the server's async job path transparently: large documents may
+be processed as a background job; this method polls until the job
+finishes, so callers always get back a single, finished result. Raises
+`PrivaroError` on a failed job or on a polling timeout.
+
+New: `DocumentChunk`, `ProtectDocumentResult` dataclasses.
+
+Depends on the corresponding backend endpoints
+(`POST/GET /v1/proxy/protect-document`) being deployed to have any
+effect — safe to install regardless, same as any forward-compatible
+addition.
+
 ## 0.5.0 — 2026-08-10
 
 Output-direction PII detection. Until now the SDK (and the proxy) only
