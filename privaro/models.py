@@ -2,7 +2,7 @@
 Privaro SDK — Data models
 """
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 
 @dataclass
@@ -147,4 +147,49 @@ class ProtectOutputResult:
             f"risk={self.risk_level} ({self.risk_score or 0:.2f}), "
             f"gdpr={'✓' if self.gdpr_compliant else '✗'}, "
             f"{self.processing_ms}ms"
+        )
+
+
+# ── Privaro Ingest (Fase 1 del plan de RAG) ─────────────────────────────────
+
+@dataclass
+class DocumentChunk:
+    """A single chunk of an already-protected document, ready to embed
+    into a vector store. Chunk boundaries never split a Privaro token
+    ([XX-0001]) — see the backend's chunker.py for the invariant this
+    relies on."""
+    index: int
+    text: str
+    char_start: int
+    char_end: int
+
+
+@dataclass
+class ProtectDocumentResult:
+    """
+    Result of protect_document() — protects a WHOLE document (e.g.
+    before indexing it into a vector store for RAG) rather than a
+    single chat prompt.
+
+    Large documents may be processed asynchronously server-side;
+    protect_document() polls transparently until the result is ready,
+    so this dataclass always represents a FINISHED result — never a
+    partial/in-progress state.
+    """
+    request_id: str
+    protected_document: str
+    chunks: List[DocumentChunk]
+    detections: List[Detection]
+    stats: Dict[str, Any]
+    job_id: Optional[str] = None  # set if the server processed this asynchronously
+
+    @property
+    def chunk_count(self) -> int:
+        return len(self.chunks)
+
+    def summary(self) -> str:
+        return (
+            f"[Privaro:ingest] {self.stats.get('total_detected', 0)} entities detected, "
+            f"{self.chunk_count} chunks, {self.stats.get('char_count', 0)} chars, "
+            f"{self.stats.get('processing_ms', 0)}ms"
         )
