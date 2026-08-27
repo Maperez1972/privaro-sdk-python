@@ -193,3 +193,59 @@ class ProtectDocumentResult:
             f"{self.chunk_count} chunks, {self.stats.get('char_count', 0)} chars, "
             f"{self.stats.get('processing_ms', 0)}ms"
         )
+
+
+# ── Privaro Retrieval Guard (Fase 2 del plan de RAG) ────────────────────────
+
+@dataclass
+class RetrievalChunk:
+    """A single chunk to protect before it enters an LLM's context — e.g.
+    right after a vector store similarity search, before you stuff the
+    results into a RAG prompt."""
+    id: str
+    text: str
+    allowed_roles: Optional[List[str]] = None
+
+
+@dataclass
+class AllowedChunk:
+    """A chunk that passed access control and was protected (tokenised)."""
+    id: str
+    protected_text: str
+    detections_count: int
+    from_cache: bool = False
+
+
+@dataclass
+class BlockedChunk:
+    """A chunk withheld from the caller — either access-denied (its
+    allowed_roles didn't include the requester's role) or a detection
+    failure (see .reason: 'access_denied' | 'detector_error' |
+    'detector_timeout'). Retrieval Guard fails CLOSED per chunk, unlike
+    protect_document()'s whole-document fail-open — a batch of unrelated
+    chunks must never let one chunk's detection failure silently pass
+    raw, unprotected text into an LLM prompt just because its neighbours
+    in the same batch succeeded."""
+    id: str
+    reason: str
+    detail: Optional[str] = None
+
+
+@dataclass
+class ProtectRetrievalResult:
+    """Result of protect_retrieval() — protects a BATCH of retrieved
+    chunks (e.g. from a vector store similarity search) right before
+    they enter an LLM's context, with optional per-chunk access control.
+    """
+    request_id: str
+    allowed_chunks: List[AllowedChunk]
+    blocked_chunks: List[BlockedChunk]
+    stats: Dict[str, Any]
+
+    def summary(self) -> str:
+        return (
+            f"[Privaro:retrieval] {len(self.allowed_chunks)} allowed, "
+            f"{len(self.blocked_chunks)} blocked, "
+            f"{self.stats.get('cache_hits', 0)} cache hits, "
+            f"{self.stats.get('processing_ms', 0)}ms"
+        )
