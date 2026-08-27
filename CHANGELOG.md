@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.7.0 — 2026-08-26
+
+Privaro Retrieval Guard support (Fase 2 of the RAG expansion plan). New
+`protect_retrieval()` on `PrivaroClient` — protects a BATCH of
+retrieved chunks (e.g. from a vector store similarity search) right
+before they enter an LLM's context, with optional per-chunk access
+control (`allowed_roles`). Server-side cached by content hash — the
+same chunk text retrieved repeatedly skips re-running detection.
+
+Fails CLOSED per chunk on a detection error/timeout (that chunk lands
+in `.blocked_chunks`), unlike `protect_document()`'s whole-document
+fail-open — a batch of unrelated chunks must never let one chunk's
+failure silently leak raw text into an LLM prompt.
+
+New: `RetrievalChunk`, `AllowedChunk`, `BlockedChunk`,
+`ProtectRetrievalResult` dataclasses.
+
 ## 0.6.0 — 2026-08-25
 
 Privaro Ingest support (Fase 1 of the RAG expansion plan). New
