@@ -4,7 +4,11 @@ Privaro SDK — HTTP Client
 import json
 import time
 from typing import Optional, List, Dict, Iterator, Any
-from .models import ProtectResult, Detection, ProtectOutputResult, ProtectDocumentResult, DocumentChunk
+from .models import (
+    ProtectResult, Detection, ProtectOutputResult,
+    ProtectDocumentResult, DocumentChunk,
+    RetrievalChunk, ProtectRetrievalResult, AllowedChunk, BlockedChunk,
+)
 from .exceptions import (
     PrivaroError, AuthError, PipelineNotFoundError,
     PolicyBlockError, RateLimitError, ProxyUnavailableError,
@@ -594,6 +598,88 @@ class PrivaroClient:
             detections=detections,
             stats=raw.get("stats") or {},
             job_id=raw.get("job_id"),
+        )
+
+    def protect_retrieval(
+        self,
+        chunks: List[RetrievalChunk],
+        pipeline_id: Optional[str] = None,
+        requester_role: str = "developer",
+        requester_user_id: Optional[str] = None,
+        mode: str = "tokenise",
+        use_nlp: bool = True,
+    ) -> ProtectRetrievalResult:
+        """
+        Protect a BATCH of retrieved chunks (e.g. from a vector store
+        similarity search) right before they enter an LLM's context —
+        Privaro Retrieval Guard (Fase 2 of the RAG expansion). Defense in
+        depth after Privaro Ingest: catches PII that slipped past
+        ingestion, or lives in a vector store never run through it, and
+        enforces per-chunk access control based on the requester's role.
+
+        Cached server-side by content hash — retrieving the same chunk
+        text repeatedly (a common RAG pattern) skips re-running detection
+        on subsequent calls.
+
+        Unlike protect_document(), this fails CLOSED per chunk on a
+        detection error/timeout: that chunk is returned in
+        .blocked_chunks (reason="detector_error"/"detector_timeout")
+        rather than passed through unprotected — a batch of unrelated
+        chunks must never let one chunk's failure silently leak raw text
+        into an LLM prompt just because its neighbours succeeded.
+
+        Args:
+            chunks:            List of RetrievalChunk(id, text,
+                                allowed_roles). allowed_roles is optional
+                                per chunk — omit it to make that chunk
+                                visible to any requester.
+            pipeline_id:       Defaults to the client's configured
+                                pipeline_id if not given
+            requester_role:    The role making this retrieval request —
+                                checked against each chunk's
+                                allowed_roles, if set
+            requester_user_id: Optional — echoed into audit logs, not
+                                used for access control directly
+            mode:               tokenise | anonymise | block
+            use_nlp:           Run Tier 2 (Presidio) in addition to Tier
+                                1 regex
+
+        Returns:
+            ProtectRetrievalResult — .allowed_chunks for what's safe to
+            put in your prompt, .blocked_chunks for what was withheld
+            and why
+
+        Raises:
+            AuthError, PipelineNotFoundError, PrivaroError
+        """
+        payload = {
+            "pipeline_id": pipeline_id or self.pipeline_id,
+            "chunks": [
+                {"id": c.id, "text": c.text, "allowed_roles": c.allowed_roles}
+                for c in chunks
+            ],
+            "requester": {"user_id": requester_user_id, "role": requester_role},
+            "options": {"mode": mode, "use_nlp": use_nlp},
+        }
+        raw = self._request("POST", "/v1/proxy/protect-retrieval", payload)
+
+        allowed = [
+            AllowedChunk(
+                id=c["id"], protected_text=c["protected_text"],
+                detections_count=c["detections_count"], from_cache=c.get("from_cache", False),
+            )
+            for c in (raw.get("allowed_chunks") or [])
+        ]
+        blocked = [
+            BlockedChunk(id=c["id"], reason=c["reason"], detail=c.get("detail"))
+            for c in (raw.get("blocked_chunks") or [])
+        ]
+
+        return ProtectRetrievalResult(
+            request_id=raw.get("request_id", ""),
+            allowed_chunks=allowed,
+            blocked_chunks=blocked,
+            stats=raw.get("stats") or {},
         )
 
     def health(self) -> dict:
