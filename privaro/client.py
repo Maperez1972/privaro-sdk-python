@@ -329,6 +329,22 @@ class PrivaroClient:
         })
         return raw.get("detokenized_text", text)
 
+    def protect_tool_output(self, output, conversation_id: str, tool_name: Optional[str] = None) -> dict:
+        """
+        Protect what a tool/function returned before it goes back into the LLM's
+        context. JSON (dict, list or JSON string) is protected field by field and
+        returned in the SAME shape; plain text is protected as a whole.
+
+        Returns {"protected_output", "detections_count", "fields_protected", "audit_log_id"}.
+        `conversation_id` must match the one you later pass to detokenize().
+        """
+        return self._request("POST", "/proxy/protect-tool-output", {
+            "pipeline_id": self.pipeline_id,
+            "output": output,
+            "tool_name": tool_name,
+            "conversation_id": conversation_id,
+        })
+
     def detect(self, prompt: str) -> ProtectResult:
         """
         Detect PII without masking. Analysis mode only — no audit log written.

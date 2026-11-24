@@ -24,6 +24,8 @@ def fake_urlopen(req, timeout=None):
     u = req.full_url
     if u.endswith("/proxy/protect"):
         return _Resp({"request_id": "r", "protected_prompt": body["prompt"].replace("Ana", "[NM-0001]"), "detections": []})
+    if u.endswith("/proxy/protect-tool-output"):
+        return _Resp({"protected_output": {"n": "[NM-0001]"}, "detections_count": 1, "fields_protected": ["n"]})
     if u.endswith("/proxy/detokenize"):
         return _Resp({"detokenized_text": body["text"].replace("[NM-0001]", "Ana")})
     if u.endswith("/proxy/protect-retrieval"):
@@ -90,3 +92,9 @@ def test_llamaindex(client):
     res = PrivaroNodePostprocessor(client).postprocess_nodes(nodes)
     assert len(res) == 1 and res[0].node.get_content() == "[NM-0001] Pérez" and res[0].score == 0.9
     assert PrivaroTransform(client)([TextNode(text="Ana")])[0].get_content() == "[NM-0001]"
+
+
+def test_protect_tool_output(client):
+    r = client.protect_tool_output({"n": "Ana"}, "c1", tool_name="crm")
+    assert r["protected_output"] == {"n": "[NM-0001]"}
+    assert calls[-1][1]["tool_name"] == "crm" and calls[-1][1]["conversation_id"] == "c1"

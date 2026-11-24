@@ -4,6 +4,7 @@
 
 - **Fixed** `protect_document()`, its job polling and `protect_retrieval()` called `/v1/v1/proxy/...` with the default base URL (404). Paths are now relative to the `/v1` base like the rest of the client.
 - **New** `client.detokenize(text, conversation_id)`.
+- **New** `client.protect_tool_output(output, conversation_id, tool_name=None)` (POST /proxy/protect-tool-output) — protects tool/function results (JSON or text), same shape back.
 - **New** `privaro.integrations.langchain` (`privaro_guard`, `privaro_mask`, `privaro_unmask`, `PrivaroDocumentTransformer`, `PrivaroRetriever`) and `privaro.integrations.llamaindex` (`PrivaroNodePostprocessor`, `PrivaroTransform`). Extras: `privaro[langchain]`, `privaro[llamaindex]`.
 - **Deprecated** `privaro.agent.PrivaroCallbackHandler` — LangChain callbacks cannot rewrite model input.
 - `mode="mask"` accepted (alias of `anonymise`, irreversible masking).
