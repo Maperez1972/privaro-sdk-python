@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.0 — 2026-11-24
+
+- **Fixed** `protect_document()`, its job polling and `protect_retrieval()` called `/v1/v1/proxy/...` with the default base URL (404). Paths are now relative to the `/v1` base like the rest of the client.
+- **New** `client.detokenize(text, conversation_id)`.
+- **New** `privaro.integrations.langchain` (`privaro_guard`, `privaro_mask`, `privaro_unmask`, `PrivaroDocumentTransformer`, `PrivaroRetriever`) and `privaro.integrations.llamaindex` (`PrivaroNodePostprocessor`, `PrivaroTransform`). Extras: `privaro[langchain]`, `privaro[llamaindex]`.
+- **Deprecated** `privaro.agent.PrivaroCallbackHandler` — LangChain callbacks cannot rewrite model input.
+- `mode="mask"` accepted (alias of `anonymise`, irreversible masking).
+
 ## 0.7.0 — 2026-08-26
 
 Privaro Retrieval Guard support (Fase 2 of the RAG expansion plan). New

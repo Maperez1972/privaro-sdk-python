@@ -254,6 +254,10 @@ class AgentRun:
 
 class PrivaroCallbackHandler:
     """
+    DEPRECATED: LangChain callbacks cannot rewrite what a model receives, so this
+    handler does not protect chat models. Use privaro.integrations.langchain
+    (privaro_guard / PrivaroRetriever) instead.
+
     LangChain-compatible callback handler that wraps agent interactions with Privaro.
 
     Intercepts on_llm_start to protect prompts and on_tool_end to protect tool outputs.

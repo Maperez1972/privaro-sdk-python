@@ -269,7 +269,7 @@ class PrivaroClient:
 
         Args:
             prompt:             Text to protect
-            mode:               tokenise | anonymise | block
+            mode:               tokenise | mask | anonymise | block
             reversible:         Store reversible tokens in vault
             agent_mode:         Stricter policies for agent pipelines
             include_detections: Include per-entity details in response
@@ -313,6 +313,21 @@ class PrivaroClient:
         raw = self._request("POST", "/proxy/protect", payload, idempotency_key)
 
         return self._parse_result(raw, original=prompt)
+
+    def detokenize(self, text: str, conversation_id: str) -> str:
+        """
+        Reverse every Privaro token ([NM-0001] ...) found in `text`, scoped to
+        the conversation that produced them. `conversation_id` MUST be the one
+        passed to protect(). Tokens that can't be found are left as-is.
+        """
+        if not text:
+            return text
+        raw = self._request("POST", "/proxy/detokenize", {
+            "pipeline_id": self.pipeline_id,
+            "text": text,
+            "conversation_id": conversation_id,
+        })
+        return raw.get("detokenized_text", text)
 
     def detect(self, prompt: str) -> ProtectResult:
         """
@@ -557,7 +572,7 @@ class PrivaroClient:
                 "chunk_size": chunk_size,
             },
         }
-        raw = self._request("POST", "/v1/proxy/protect-document", payload)
+        raw = self._request("POST", "/proxy/protect-document", payload)
 
         if raw.get("status") == "processing" and raw.get("job_id"):
             job_id = raw["job_id"]
@@ -571,7 +586,7 @@ class PrivaroClient:
                         f"GET /v1/proxy/protect-document/{job_id} directly."
                     )
                 time.sleep(poll_interval_seconds)
-                raw = self._request("GET", f"/v1/proxy/protect-document/{job_id}", {})
+                raw = self._request("GET", f"/proxy/protect-document/{job_id}", {})
                 if raw.get("status") != "processing":
                     break
 
@@ -661,7 +676,7 @@ class PrivaroClient:
             "requester": {"user_id": requester_user_id, "role": requester_role},
             "options": {"mode": mode, "use_nlp": use_nlp},
         }
-        raw = self._request("POST", "/v1/proxy/protect-retrieval", payload)
+        raw = self._request("POST", "/proxy/protect-retrieval", payload)
 
         allowed = [
             AllowedChunk(

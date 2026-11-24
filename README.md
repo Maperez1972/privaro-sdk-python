@@ -142,23 +142,45 @@ async def analyse_document(text: str) -> str:
 result = asyncio.run(analyse_document("Client: Ana López, DNI 87654321X"))
 ```
 
-### LangChain Callback Handler
+### LangChain — Runnables (recommended)
+
+`pip install "privaro[langchain]"`
 
 ```python
-from langchain_openai import ChatOpenAI
-from langchain.agents import AgentExecutor
-from privaro.agent import PrivaroCallbackHandler
-import privaro
+from privaro import PrivaroClient
+from privaro.integrations.langchain import privaro_guard, PrivaroDocumentTransformer, PrivaroRetriever
 
-privaro.init(api_key="prvr_...", pipeline_id="...")
-
-handler = PrivaroCallbackHandler(agent_name="contract-agent")
-llm = ChatOpenAI(model="gpt-4", callbacks=[handler])
-agent_executor = AgentExecutor(agent=agent, tools=tools, callbacks=[handler])
-
-# All prompts and tool outputs are automatically protected
-result = agent_executor.invoke({"input": "Analyse this contract for María García"})
+client = PrivaroClient(api_key="prvr_...", pipeline_id="...")
+chain = privaro_guard(prompt | llm | StrOutputParser(), client)       # mask in -> LLM -> reveal out
+docs = PrivaroDocumentTransformer(client).transform_documents(raw)    # mask before embedding
+rag = PrivaroRetriever(vectorstore.as_retriever(), client)            # mask retrieved chunks (+ allowed_roles ACL)
 ```
+
+> `privaro.agent.PrivaroCallbackHandler` is **deprecated**: LangChain callbacks cannot rewrite what a model receives, so it does not protect chat models. Use the Runnables above.
+
+### LlamaIndex
+
+`pip install "privaro[llamaindex]"`
+
+```python
+from privaro.integrations.llamaindex import PrivaroNodePostprocessor, PrivaroTransform
+
+engine = index.as_query_engine(node_postprocessors=[PrivaroNodePostprocessor(client)])
+pipeline = IngestionPipeline(transformations=[SentenceSplitter(), PrivaroTransform(client), embed_model])
+```
+
+### Any OpenAI-compatible client — `base_url` swap
+
+```python
+from openai import OpenAI
+client = OpenAI(base_url="https://api.privaro.ai/v1", api_key="prvr_...",
+                default_headers={"X-Privaro-Pipeline": "<pipeline-uuid>"})
+```
+Optional headers: `X-Privaro-Mode` (`tokenise` | `mask` | `block`), `X-Privaro-Conversation` (uuid). Streaming supported; your LLM provider key must be configured in Privaro (BYOK). Tool-calling is not proxied by this endpoint yet.
+
+### `client.detokenize(text, conversation_id)`
+
+Reverse Privaro tokens using the same `conversation_id` that produced them (`protect(..., conversation_id=...)`).
 
 ### CrewAI Tool
 
